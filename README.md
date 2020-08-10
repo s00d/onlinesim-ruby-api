@@ -15,18 +15,12 @@ $ gem install onlinesim
 ```ruby
 require 'onlinesim'
 
-module MyModule
-  class Tester
-    def test
-      driver = OnlineSim::Driver.new(:apikey =>  'TOKEN').numbers
-      tzid = driver.get('vkcom')
-      puts driver.stateone(tzid)['number']
-      puts driver.wait_code(tzid)
-    end
-  end
-end
+# ...
 
-puts MyModule::Tester.new.test
+driver = OnlineSim::Driver.new(:apikey => 'TOKEN').numbers
+tzid = driver.get('vkcom')
+puts driver.stateone(tzid)['number']
+puts driver.close(tzid)
 ```
 
 ## Documentation
