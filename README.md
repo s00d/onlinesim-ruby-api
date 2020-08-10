@@ -3,7 +3,7 @@
 
 Wrapper for automatic reception of SMS-messages by onlinesim.ru
 
-[![Gem Version](https://badge.fury.io/rb/ribose.svg)](https://badge.fury.io/rb/ribose)
+[![Gem Version](https://badge.fury.io/rb/onlinesim.svg)](https://badge.fury.io/rb/onlinesim)
 
 
 ### Installation
