@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.email         = ['support@onlinesim.ru']
 
   spec.summary       = 'onlinesim.ru Ruby API wrapper'
-  spec.homepage      = 'http://onlinesim.ru'
+  spec.homepage      = 'https://github.com/s00d/onlinesim-ruby-api'
   spec.license       = 'MIT'
 
   spec.files         = Dir.chdir(File.expand_path('..', __FILE__)) do
