@@ -25,9 +25,9 @@ puts driver.close(tzid)
 
 ## Documentation
 
-All documentation is in the wiki of this project - **[Documentation](https://github.com/s00d/onlinesim-python-api/wiki)**
+All documentation is in the wiki of this project - **[Documentation](https://github.com/s00d/onlinesim-ruby-api/wiki)**
 
 ## Bugs
 
 If you have any problems, please create Issues here 
-https://github.com/s00d/onlinesim-python-api/issues
+https://github.com/s00d/onlinesim-ruby-api/issues
