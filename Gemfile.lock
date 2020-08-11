@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    onlinesim (1.0.6)
+    onlinesim (1.0.7)
       faraday (~> 1.0)
       oj (~> 3.10)
       thor

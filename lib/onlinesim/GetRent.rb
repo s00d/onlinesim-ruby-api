@@ -15,7 +15,7 @@ module OnlineSim
     end
 
     def extend(tzid)
-      return self._get(:endpoint => '/rent/portReload', :params => {tzid:tzid})
+      return self._get(:endpoint => '/rent/extendRentState', :params => {tzid:tzid})
     end
 
     def tariffs
