@@ -25,7 +25,7 @@ module OnlineSim
 
     private
     def client
-      @_client ||= Faraday.new('https://onlinesim.ru', proxy: 'http://127.0.0.1:4034') do |client|
+      @_client ||= Faraday.new('https://onlinesim.ru') do |client|
         client.request :url_encoded
         client.adapter Faraday.default_adapter
         client.headers['User-agent'] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.89 Safari/537.36"
