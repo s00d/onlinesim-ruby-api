@@ -3,7 +3,7 @@ require 'onlinesim/Base'
 module OnlineSim
   class GetProxy < Base
     def get(cl:'days', type:'private', connect:'https', count: 1, operator:nil, country: 7, city: 'any', port_count: 1, session:true )
-      return self ._get(:endpoint => '/proxy/getProxy', :params => {cl: cl,type:type,connect:connect,count:count,operator:operator,country:country,city:city,port_count:port_count,session:session})['item']
+      return self ._get(:endpoint => '/proxy/getProxy', :params => {class: cl,type:type,connect:connect,count:count,operator:operator,country:country,city:city,port_count:port_count,session:session})['item']
     end
 
     def state(orderby: "ASC")
