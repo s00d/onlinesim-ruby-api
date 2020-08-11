@@ -28,5 +28,4 @@ All documentation is in the wiki of this project - **[Documentation](https://git
 
 ## Bugs
 
-If you have any problems, please create Issues here 
-https://github.com/s00d/onlinesim-ruby-api/issues
+If you have any problems, please create Issues [here](https://github.com/s00d/onlinesim-ruby-api/issues) 
