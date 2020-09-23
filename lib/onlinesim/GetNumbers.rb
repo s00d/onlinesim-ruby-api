@@ -34,6 +34,10 @@ module OnlineSim
       return self ._get(:endpoint => 'setOperationOk', :params => {tzid:tzid})
     end
 
+    def ban(tzid)
+      return self ._get(:endpoint => 'setOperationOk', :params => {tzid:tzid, ban: 1})
+    end
+
     def tariffs()
       return self ._get(:endpoint => 'getNumbersStats', :params => {country:'all'})
     end
