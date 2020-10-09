@@ -1,4 +1,4 @@
-require 'onlinesim/Base'
+require 'onlinesim/base'
 
 module OnlineSim
   class GetProxy < Base
