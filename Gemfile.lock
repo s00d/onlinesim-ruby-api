@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    onlinesim (1.0.8)
+    onlinesim (1.0.11)
       faraday (~> 1.0)
       oj (~> 3.10)
       thor
@@ -9,18 +9,36 @@ PATH
 GEM
   remote: https://rubygems.org/
   specs:
-    faraday (1.0.1)
+    faraday (1.8.0)
+      faraday-em_http (~> 1.0)
+      faraday-em_synchrony (~> 1.0)
+      faraday-excon (~> 1.1)
+      faraday-httpclient (~> 1.0.1)
+      faraday-net_http (~> 1.0)
+      faraday-net_http_persistent (~> 1.1)
+      faraday-patron (~> 1.0)
+      faraday-rack (~> 1.0)
       multipart-post (>= 1.2, < 3)
+      ruby2_keywords (>= 0.0.4)
+    faraday-em_http (1.0.0)
+    faraday-em_synchrony (1.0.0)
+    faraday-excon (1.1.0)
+    faraday-httpclient (1.0.1)
+    faraday-net_http (1.0.1)
+    faraday-net_http_persistent (1.2.0)
+    faraday-patron (1.0.0)
+    faraday-rack (1.0.0)
     multipart-post (2.1.1)
-    oj (3.10.8)
-    thor (1.0.1)
+    oj (3.13.9)
+    ruby2_keywords (0.0.5)
+    thor (1.1.0)
 
 PLATFORMS
   ruby
 
 DEPENDENCIES
-  bundler (~> 2.1.4)
+  bundler (~> 2.2.27)
   onlinesim!
 
 BUNDLED WITH
-   2.1.4
+   2.2.27

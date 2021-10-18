@@ -5,11 +5,12 @@ require 'onlinesim'
 
 class Tester
   def test
-    driver = OnlineSim::Driver.new(:apikey =>  '').free
-    # tzid = driver.get('odklru')
-    # puts tzid
-    countries = driver.countries
-    puts countries
+    driver = OnlineSim::Driver.new(:apikey =>  'APIKEY').numbers
+    tzid = driver.getwithnumber('vkcom')
+    puts tzid['number']
+    puts tzid['tzid']
+    # countries = driver.countries
+    # puts countries
     # puts driver.wait_code(680507)
   end
 end

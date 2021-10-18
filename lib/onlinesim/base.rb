@@ -6,6 +6,7 @@ module FaradayOverrides
   def initialize *args
     options = args.last
     options[:ssl] = {verify: false}
+    # options[:proxy] = "http://127.0.0.1:4034"
     super
   end
 end

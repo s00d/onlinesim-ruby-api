@@ -6,8 +6,12 @@ module OnlineSim
       return self ._get(:endpoint => 'getPrice', :params => {service:service})['price']
     end
 
-    def get(service, country: 7, reject: nil, extension: false)
+    def get(service, country: 7, reject: {}, extension: false)
       return self ._get(:endpoint => 'getNum', :params => {service:service,country:country,reject:reject,extension:extension})['tzid']
+    end
+
+    def getwithnumber(service, country: 7, reject: {}, extension: false)
+      return self ._get(:endpoint => 'getNum', :params => {service:service,country:country,reject:reject,extension:extension, number:true})
     end
 
     def state(message_to_code:1, orderby: 'ASC', msg_list:true, clean: false, repeat:false)
