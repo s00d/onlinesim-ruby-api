@@ -1,0 +1,62 @@
+name: release
+
+# Push a version tag (X.Y.Z, no `v`) to publish to RubyGems and create the GitHub release.
+# RubyGems trusted publishing (OIDC): no API key. The registry pins this file name and the `release` environment.
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ruby
+          bundler-cache: true
+
+      - name: Tag matches OnlineSim::VERSION
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(ruby -Ilib -e 'require "onlinesim/version"; print OnlineSim::VERSION')
+          if [ "$TAG" != "$version" ]; then
+            echo "::error::tag $TAG does not match OnlineSim::VERSION $version"
+            exit 1
+          fi
+
+      # `bundle exec rake release` with OIDC credentials. The Rakefile turns off its git tagging/pushing:
+      # the X.Y.Z tag that triggered this run is the release tag.
+      - uses: rubygems/release-gem@v1
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "release $TAG exists, skipping"
+            exit 0
+          fi
+          # CHANGELOG.md headings: "## [X.Y.Z] - date".
+          awk -v tag="$TAG" '
+            index($0, "## [" tag "]") == 1 { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::no '## [$TAG]' section in CHANGELOG.md"
+            exit 1
+          fi
+          gh release create "$TAG" --title "$TAG" --latest --notes-file release-notes.md

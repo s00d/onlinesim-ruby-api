@@ -4,6 +4,8 @@ on:
   push:
     branches: [master]
   pull_request:
+  # release.yml runs this before publishing.
+  workflow_call:
 
 jobs:
   test:
@@ -22,4 +24,6 @@ jobs:
           bundler-cache: true
       - run: bundle exec rubocop
       - run: bundle exec rake test
-      - run: gem build onlinesim.gemspec
+      # Smoke from artifact: `gem build --strict` (any gemspec warning fails), only lib/ + README/LICENSE/CHANGELOG
+      # in the .gem, install it with --install-dir into an empty dir, run the README "Testing" example against the mock.
+      - run: ruby test/smoke_artifact.rb

@@ -4,7 +4,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] - unreleased
+## [2.1.0] - 2026-11-19
+
+### Added
+
+- `OnlineSim::MockOnlineSim`: a built-in, in-process fake of the OnlineSim API for testing integrations offline — no network, key, money or clock. `mock.client` returns a normal `OnlineSim::Client` wired to it (`mock.transport` is the mock itself, a transport with `call(method, url, headers, body, timeout)`). It answers every endpoint the SDK calls like the real backend (HTTP 456 for a wrong key, string/int `response`, decimal-string money, `[]` for empty maps) and keeps balance, operations and rents. Test helpers: `add_sms`, `add_sms_after` (lets `wait_code` run with `interval: 0`), `fail_next`, `fail_next_transport`, `set_balance`, `balance`, `operations`, `rents`, `requests`, `reset`. Autoloaded by `require "onlinesim"` (nothing is loaded until first use); `require "onlinesim/mock"` works too. See the [testing guide](https://s00d.github.io/onlinesim-ruby-api/testing).
+- Packaging checks in CI: `gem build --strict` (warnings fail the build) and a smoke test that builds the gem, installs it with `--install-dir` into an empty directory and runs the README "Testing" example on Ruby 3.0 and the latest Ruby.
+- `.github/workflows/release.yml`: a version tag runs CI, checks the tag against `OnlineSim::VERSION`, publishes to RubyGems with trusted publishing (OIDC, no API key) and creates the GitHub release from this file.
+
+### Changed
+
+- Gemspec `source_code_uri` points to the release tag's tree, so it no longer repeats `homepage` (RubyGems warned about the duplicate).
+
+## [2.0.0] - 2026-11-19
 
 A rewrite. The public API changed; see the [docs](https://s00d.github.io/onlinesim-ruby-api/).
 

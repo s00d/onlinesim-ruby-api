@@ -2,10 +2,14 @@
 title: Changelog
 description: Release notes of the onlinesim Ruby gem.
 navigation:
-  order: 6
+  order: 7
 ---
 
 The full history is in [CHANGELOG.md](https://github.com/s00d/onlinesim-ruby-api/blob/master/CHANGELOG.md).
+
+## 2.1.0
+
+- New: `OnlineSim::MockOnlineSim`, an offline fake of the API for your tests — see [Testing](/testing).
 
 ## 2.0.0
 
