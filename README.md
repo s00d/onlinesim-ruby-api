@@ -1,31 +1,26 @@
-# Onlinesim Ruby API
+# onlinesim
 
+[![Gem Version](https://badge.fury.io/rb/onlinesim.svg)](https://rubygems.org/gems/onlinesim)
+[![CI](https://github.com/s00d/onlinesim-ruby-api/actions/workflows/ci.yml/badge.svg)](https://github.com/s00d/onlinesim-ruby-api/actions/workflows/ci.yml)
 
-Wrapper for automatic reception of SMS-messages by onlinesim.ru
+Ruby client for the [OnlineSim](https://onlinesim.io) API: SMS numbers, rent, account and free numbers.
+Zero runtime dependencies (`Net::HTTP` + `JSON` from the standard library), Ruby 3.0+.
 
-[![Gem Version](https://badge.fury.io/rb/onlinesim.svg)](https://badge.fury.io/rb/onlinesim)
-
-### Installation
-You can install or upgrade package with:
 ```bash
-$ gem install onlinesim
+bundle add onlinesim
 ```
-### Example
+
 ```ruby
-require 'onlinesim'
+require "onlinesim"
 
-# ...
+client = OnlineSim::Client.new(api_key: ENV["ONLINESIM_KEY"])
 
-driver = OnlineSim::Driver.new(:apikey => 'TOKEN').numbers
-tzid = driver.get('vkcom')
-puts driver.stateone(tzid)['number']
-puts driver.close(tzid)
+b = client.user.balance
+puts "available: #{b['balance'] - b['zbalance']} USD"
+
+order = client.numbers.get_with_number("google", 44)
+puts "enter #{order['number']} in the app"
+puts "code: #{client.numbers.wait_code(order['tzid'])}"
 ```
 
-## Documentation
-
-All documentation is in the wiki of this project - **[Documentation](https://github.com/s00d/onlinesim-ruby-api/wiki)**
-
-## Bugs
-
-If you have any problems, please create Issues [here](https://github.com/s00d/onlinesim-ruby-api/issues) 
+Documentation: **https://s00d.github.io/onlinesim-ruby-api/** · Changes: [CHANGELOG.md](CHANGELOG.md) · License: Apache-2.0

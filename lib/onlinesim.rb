@@ -1,40 +1,13 @@
-require 'onlinesim/GetFree'
-require 'onlinesim/GetForward'
-require 'onlinesim/GetNumbers'
-require 'onlinesim/GetProxy'
-require 'onlinesim/GetRent'
-require 'onlinesim/GetUser'
+# frozen_string_literal: true
 
-module OnlineSim
-  class Driver
-    def initialize(apikey: '', lang: 'en', dev_id: str = nil)
-      @apikey = apikey
-      @lang = lang
-      @dev_id = dev_id
-    end
-
-    def numbers
-      OnlineSim::GetNumbers.new(:apikey => @apikey, :lang => @lang, :dev_id => @dev_id)
-    end
-
-    def forward
-      OnlineSim::GetForward.new(:apikey => @apikey, :lang => @lang, :dev_id => @dev_id)
-    end
-
-    def free
-      OnlineSim::GetFree.new(:apikey => @apikey, :lang => @lang, :dev_id => @dev_id)
-    end
-
-    def proxy
-      OnlineSim::GetProxy.new(:apikey => @apikey, :lang => @lang, :dev_id => @dev_id)
-    end
-
-    def rent
-      OnlineSim::GetRent.new(:apikey => @apikey, :lang => @lang, :dev_id => @dev_id)
-    end
-
-    def user
-      OnlineSim::GetUser.new(:apikey => @apikey, :lang => @lang, :dev_id => @dev_id)
-    end
-  end
-end
+require_relative "onlinesim/version"
+require_relative "onlinesim/errors"
+require_relative "onlinesim/normalize"
+require_relative "onlinesim/transport"
+require_relative "onlinesim/numbers"
+require_relative "onlinesim/rent"
+require_relative "onlinesim/user"
+require_relative "onlinesim/free"
+require_relative "onlinesim/wait"
+require_relative "onlinesim/webhook"
+require_relative "onlinesim/client"

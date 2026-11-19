@@ -1,25 +1,27 @@
-# coding: utf-8
-lib = File.expand_path('../lib', __FILE__)
-$LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
-require "onlinesim/version"
+# frozen_string_literal: true
+
+require_relative "lib/onlinesim/version"
 
 Gem::Specification.new do |spec|
-  spec.name          = 'onlinesim'
-  spec.version       = Onlinesim::VERSION
-  spec.authors       = ['s00d']
-  spec.email         = ['support@onlinesim.ru']
+  spec.name = "onlinesim"
+  spec.version = OnlineSim::VERSION
+  spec.authors = ["s00d"]
+  spec.email = ["support@onlinesim.ru"]
 
-  spec.summary       = 'onlinesim.ru Ruby API wrapper'
-  spec.homepage      = 'https://github.com/s00d/onlinesim-ruby-api'
-  spec.license       = 'MIT'
+  spec.summary = "Ruby client for the OnlineSim API: SMS numbers, rent, account and free numbers."
+  spec.description = "Zero-dependency Ruby client for the OnlineSim API (Net::HTTP + JSON from the standard library)."
+  spec.homepage = "https://github.com/s00d/onlinesim-ruby-api"
+  spec.license = "Apache-2.0"
+  spec.required_ruby_version = ">= 3.0"
 
-  spec.files         = Dir.chdir(File.expand_path('..', __FILE__)) do
-    `git ls-files -z`.split("\x0").reject { |f| f.match(%r{^(test|spec|features)/}) }
-  end
+  spec.metadata = {
+    "source_code_uri" => spec.homepage,
+    "documentation_uri" => "https://s00d.github.io/onlinesim-ruby-api/",
+    "changelog_uri" => "#{spec.homepage}/blob/master/CHANGELOG.md",
+    "bug_tracker_uri" => "#{spec.homepage}/issues",
+    "rubygems_mfa_required" => "true"
+  }
+
+  spec.files = Dir["lib/**/*.rb", "README.md", "CHANGELOG.md", "LICENSE"]
   spec.require_paths = ["lib"]
-
-  spec.add_dependency 'faraday', '~> 1.0'
-  spec.add_dependency 'oj',    '~> 3.10'
-  spec.add_dependency 'thor'
-  spec.add_development_dependency "bundler", "~> 2.2.27"
 end
