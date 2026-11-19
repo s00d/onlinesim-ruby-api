@@ -1,9 +1,18 @@
 /.bundle/
-/.yardoc
-/_yardoc/
+/vendor/
+/pkg/
 /coverage/
 /doc/
-/pkg/
-/spec/reports/
+/.yardoc
 /tmp/
-dosc.md
+*.gem
+# Library: the lockfile is not committed, CI resolves per Ruby version.
+/Gemfile.lock
+.DS_Store
+
+# docs site (standalone package in docs/)
+/docs/node_modules
+/docs/.nuxt
+/docs/.output
+/docs/.data
+/docs/dist
