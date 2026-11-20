@@ -3,8 +3,8 @@
 module OnlineSim
   class MockOnlineSim
     # One SMS received by an operation or a rent. `code` is extracted from `text` (nil when there is none);
-    # `id` and `created_at` are set for rent messages only.
-    Sms = Struct.new(:service, :text, :code, :id, :created_at, keyword_init: true)
+    # `at` is the seconds after the mock epoch when it arrived; `id` and `created_at` are set for rent messages only.
+    Sms = Struct.new(:service, :text, :code, :at, :id, :created_at, keyword_init: true)
 
     # A number operation. `number` has the `+`; `sum` (USD) is frozen while open, spent on close after an SMS,
     # refunded on close without one. `cursor` is the index of the SMS shown in `msg`; `next` moves it past the last.
@@ -12,9 +12,12 @@ module OnlineSim
     Operation = Struct.new(:tzid, :service, :country, :number, :sum, :status, :messages, :cursor, # rubocop:disable Lint/StructNewOverride
                            keyword_init: true)
 
-    # A rent. `number` has no country code, as the backend sends it for rents; `sum` is the total paid, USD.
-    # `messages` are oldest first. Closed rents are removed.
-    Rent = Struct.new(:tzid, :country, :number, :days, :sum, :extension, :messages, keyword_init: true) # rubocop:disable Lint/StructNewOverride
+    # A rent. `number` has no country code, as the backend sends it for rents. `days` is the total period incl.
+    # extensions, `initial_days` the period of getRentNum. `status` 0: reserved, waiting for the first SMS; 1: confirmed
+    # by an SMS that is not `notify`, price charged. `sum` is the total cost incl. extensions, USD, frozen while
+    # `status` is 0. `messages` are oldest first. Closed rents are removed.
+    Rent = Struct.new(:tzid, :country, :number, :days, :initial_days, :status, :sum, :extension, :messages, # rubocop:disable Lint/StructNewOverride
+                      keyword_init: true)
 
     # State of the mock backend: the single owner of everything the fake API remembers — balance, operations,
     # rents, the profile's webhook URL and its delivery log, scheduled SMS, the failure queue and the request
@@ -22,7 +25,7 @@ module OnlineSim
     #
     # Deterministic: ids and numbers come from a counter, timestamps from a fixed epoch plus that counter.
     # Money is kept in integer thousandths of a USD ("mills") so sums never drift.
-    class State
+    class State # rubocop:disable Metrics/ClassLength -- the single owner of the mock's state; splitting it would spread that state
       DEFAULT_PRICES = {
         7 => { "vkcom" => 0.5, "telegram" => 1.2, "google" => 0.3 },
         44 => { "google" => 0.2, "vkcom" => 0.36 }
@@ -32,6 +35,10 @@ module OnlineSim
       USER_ID = 1
       # Seconds an operation stays open, as reported in `time`. The mock has no clock, so it never runs down.
       OPERATION_TIME = 1200
+      # Minutes an unconfirmed rent waits for its first SMS (`stop_time` = start + this).
+      RENT_FIRST_SMS_MINUTES = 20
+      # Sender of a rent SMS from a prohibited sender: it gets the Integer `code` 0 and does not confirm the rent.
+      NOTIFY = "notify"
       # 2026-01-01 00:00:00 UTC.
       EPOCH = 1_767_225_600
 
@@ -54,7 +61,7 @@ module OnlineSim
 
       attr_reader :api_key, :guard_interval, :prices, :rent_tariffs,
                   :operations, :rents, :webhook_logs, :requests, :failures, :scheduled
-      # Total balance incl. the frozen part, and the part frozen by open operations, mills.
+      # Total balance incl. the frozen part, and the part frozen by open operations and unconfirmed rents, mills.
       attr_accessor :balance, :frozen, :webhook_url
 
       def initialize(api_key: "mock-key", balance: 100, prices: nil, rent_tariffs: nil, guard_interval: 0)
@@ -95,23 +102,18 @@ module OnlineSim
 
       # An SMS arrives at operation or rent `tzid` now. Returns false when there is no open one.
       def deliver(tzid, text, service = nil)
-        sms = Sms.new(text: text, code: State.extract_code(text))
         op = @operations[tzid]
         if op && op.status != "TZ_OVER_OK"
-          sms.service = service || op.service
+          sms = Sms.new(service: service || op.service, text: text, code: State.extract_code(text), at: @seq)
           op.messages << sms
           op.status = "TZ_NUM_ANSWER"
-          record_webhook("receiving_sms", tzid, op.country, op.number, sms)
+          # Activation: `+<digits>`, seconds left, the order time.
+          record_webhook("receiving_sms", tzid, op.country, op.number, sms, OPERATION_TIME, State.stamp(op.tzid))
           return true
         end
-        rent = @rents[tzid]
-        return false unless rent
+        rent = @rents[tzid] or return false
 
-        sms.service = service || "other"
-        sms.id = next_id
-        sms.created_at = State.stamp(sms.id)
-        rent.messages << sms
-        record_webhook("rent_sms", tzid, rent.country, rent.number, sms)
+        deliver_to_rent(rent, text, service || "other")
         true
       end
 
@@ -131,17 +133,33 @@ module OnlineSim
 
       private
 
+      # The first SMS that is not `notify` confirms the rent: the reservation is charged.
+      def deliver_to_rent(rent, text, service)
+        id = next_id
+        sms = Sms.new(service: service, text: text, code: State.extract_code(text), at: id, id: id, created_at: State.stamp(id))
+        rent.messages << sms
+        if rent.status.zero? && service != NOTIFY
+          cost = State.to_mills(rent.sum)
+          @frozen -= cost
+          @balance -= cost
+          rent.status = 1
+        end
+        # Rent: full number in digits without `+`, minutes left, the SMS time.
+        minutes_left = rent.status == 1 ? rent.days * 24 * 60 : RENT_FIRST_SMS_MINUTES
+        record_webhook("rent_sms", rent.tzid, rent.country, "#{rent.country}#{rent.number}", sms, minutes_left, sms.created_at)
+      end
+
       # No HTTP call: the mock only records what the backend would have sent.
-      def record_webhook(type, tzid, country, number, sms)
+      def record_webhook(type, tzid, country, number, sms, time_left, time_start) # rubocop:disable Metrics/ParameterLists
         return unless @webhook_url
 
-        time = State.stamp(@seq)
+        time = State.stamp(sms.at)
         @webhook_logs << {
           "id" => @webhook_logs.size + 1, "user_id" => USER_ID, "webhook_url" => @webhook_url, "type" => type,
           "params" => {
             "webhook_type" => type, "operation_id" => tzid, "user_id" => USER_ID, "country_code" => country,
-            "number" => number, "sender" => sms.service, "message" => sms.text, "code" => sms.code,
-            "time_start" => time, "time_left" => OPERATION_TIME
+            "number" => number, "sender" => sms.service, "message" => sms.text, "code" => sms.code || "",
+            "time_start" => time_start, "time_left" => time_left
           },
           "status" => "success", "error" => nil, "created_at" => time, "updated_at" => time
         }

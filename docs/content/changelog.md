@@ -7,6 +7,12 @@ navigation:
 
 The full history is in [CHANGELOG.md](https://github.com/s00d/onlinesim-ruby-api/blob/master/CHANGELOG.md).
 
+## 2.1.1
+
+- `wait_code` retries `TRY_AGAIN_LATER` (rate limit), `ERROR_UNDEFINED` and `INTERVAL_CONCURRENT_REQUESTS_ERROR`.
+- `payment_history["paylist"]` is kept when it arrives as a list; error messages follow the current API.
+- `MockOnlineSim` follows the backend more closely: rent reservation and confirmation, `setOperationRevise` and `closeRentNum` answers, missing vs wrong key — see [Testing](/testing).
+
 ## 2.1.0
 
 - New: `OnlineSim::MockOnlineSim`, an offline fake of the API for your tests — see [Testing](/testing).

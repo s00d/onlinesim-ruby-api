@@ -8,7 +8,7 @@ module OnlineSim
     end
 
     # Balance in USD: {"balance" => Float, "zbalance" => Float, "income" => Float (when sent)}.
-    # `balance` includes the frozen `zbalance`: available = balance - zbalance.
+    # `balance` includes the frozen `zbalance` (may be negative): available = balance - max(zbalance, 0).
     def balance
       res = @request.call("getBalance.php", query: { income: 1 })
       out = { "balance" => (Normalize.num(res["balance"]) || 0).to_f, "zbalance" => (Normalize.num(res["zbalance"]) || 0).to_f }
@@ -24,8 +24,8 @@ module OnlineSim
 
     # Top-up orders (paginated, newest first) and the available payment methods.
     def payment_history(page = 1)
-      res = @request.call("getPaymentHistory.php", query: { page: page })
-      res.merge("paylist" => Normalize.map(res["paylist"]))
+      # `paylist` stays as sent: a non-empty JSON array is real data (group ids 0..n), not PHP's empty map.
+      @request.call("getPaymentHistory.php", query: { page: page })
     end
 
     # Set the URL that receives SMS webhooks. Raises ApiError VALIDATION_ERROR for an invalid URL.

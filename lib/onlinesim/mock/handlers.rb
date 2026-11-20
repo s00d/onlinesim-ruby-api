@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "uri"
-
 module OnlineSim
   class MockOnlineSim
     # The mock's routes: endpoint path (relative to `/api/`) → handler. A handler gets the state and the request
@@ -25,6 +23,10 @@ module OnlineSim
         "first_login" => false, "sub" => 0, "disable" => false, "is_project_subscription" => false
       }.freeze
 
+      # `ignore` of getFreeList: a note about prohibited services and their ids.
+      FREE_IGNORE = "<p>Messages from these services are not shown:</p><p>1,2,3</p>"
+
+      # Country 44 first, like the backend's list.
       FREE = {
         44 => {
           name: "united_kingdom", text: "United Kingdom",
@@ -45,6 +47,9 @@ module OnlineSim
         value = req[:query][key]
         value.nil? ? fallback : Integer(value, 10, exception: false) || fallback
       end
+
+      # `YYYY-MM-DDTHH:MM:SS.000000Z`, the ISO-8601 form getFreeList sends.
+      def iso(seconds) = "#{State.stamp(seconds).sub(" ", "T")}.000000Z"
 
       # USD with `digits` decimals, as the backend sends `balance` and rent `sum`.
       def decimal(mills, digits = 3) = format("%.#{digits}f", State.from_mills(mills))
@@ -119,7 +124,8 @@ module OnlineSim
         return { "response" => 1, "tzid" => tzid } if req[:query]["number"].nil?
 
         { "response" => 1, "tzid" => tzid, "number" => number, "country" => country, "time" => State::OPERATION_TIME,
-          "service" => service }
+          "service" => service, "title" => service, "response_text" => "Waiting for SMS",
+          "guard_interval_remaining_seconds" => state.guard_interval }
       end
 
       def get_state(state, req)
@@ -138,17 +144,20 @@ module OnlineSim
 
       def set_operation_revise(state, req)
         tzid = int(req, "tzid", 0)
-        op = state.operations[tzid]
-        # Always succeeds, even for unknown tzids, like the backend.
-        if op && op.status != "TZ_OVER_OK"
+        return error("ERROR_NO_TZID") if tzid.zero?
+
+        op = state.operations[tzid] or return error("ERROR_WRONG_TZID")
+        if op.status != "TZ_OVER_OK"
           op.cursor = op.messages.size
           op.status = "TZ_NUM_WAIT"
         end
-        { "response" => 1, "tzid" => tzid }
+        { "tzid" => tzid.to_s, "response" => "1" }
       end
 
       def set_operation_ok(state, req)
         tzid = int(req, "tzid", 0)
+        return error("ERROR_NO_TZID") if tzid.zero?
+
         op = state.operations[tzid]
         return error("ERROR_WRONG_TZID") if op.nil? || op.status == "TZ_OVER_OK"
 
@@ -185,38 +194,49 @@ module OnlineSim
 
       # ----- rent -----
 
-      def rent_item(state, rent, req) # rubocop:disable Metrics/AbcSize
+      # A rent as the backend sends it. `sum` is a number in getRentNum/extendRentState and a 2-decimal string in
+      # getRentState (`string_sum`). An unconfirmed rent (`status` 0) waits 20 minutes for its first SMS.
+      def rent_item(state, rent, req, string_sum: false) # rubocop:disable Metrics/AbcSize,Metrics/CyclomaticComplexity,Metrics/PerceivedComplexity
         tariff = state.rent_tariffs[rent.country]
         extendable = rent.extension && tariff && tariff[:extend] == 1
+        confirmed = rent.status == 1
         start = rent.tzid
+        minutes = confirmed ? rent.days * 24 * 60 : State::RENT_FIRST_SMS_MINUTES
         item = {
-          "status" => 1, "extension" => rent.extension ? 1 : 0,
+          "status" => rent.status, "extension" => rent.extension ? 1 : 0,
           "messages" => rent.messages.reverse.map do |m|
-            { "id" => m.id, "service" => m.service, "text" => m.text, "code" => m.code || "", "created_at" => m.created_at }
+            # A notice about a prohibited sender carries the Integer 0, other SMS a String ("" without a code).
+            code = m.service == State::NOTIFY ? 0 : m.code || ""
+            { "id" => m.id, "service" => m.service, "text" => m.text, "code" => code, "created_at" => m.created_at }
           end,
-          "webhook_url" => state.webhook_url, "sum" => decimal(State.to_mills(rent.sum), 2), "country" => rent.country,
-          "start_time" => State.stamp(start), "stop_time" => State.stamp(start + (rent.days * 86_400)),
-          "checked_time" => State.stamp(start), "number" => rent.number, "days_autoextend" => 0, "rent" => 1,
-          "tzid" => rent.tzid, "time" => rent.days * 24 * 60, "days" => rent.days, "hours" => rent.days * 24,
-          "extend" => extendable ? tariff[:days].dup : [], "checked" => true, "reload" => nil,
+          "webhook_url" => state.webhook_url, "sum" => string_sum ? decimal(State.to_mills(rent.sum), 2) : rent.sum,
+          "country" => rent.country, "start_time" => State.stamp(start), "stop_time" => State.stamp(start + (minutes * 60)),
+          "checked_time" => State.stamp(start), "number" => rent.number, "days_autoextend" => rent.initial_days,
+          "rent" => rent.days, "tzid" => rent.tzid, "time" => minutes, "days" => confirmed ? rent.days : 0,
+          "hours" => confirmed ? rent.days * 24 : 0, "extend" => extendable ? tariff[:days].dup : [],
+          "checked" => confirmed, "reload" => rent.country == 7 ? 0 : nil,
           "day_extend" => extendable ? tariff[:days].fetch(1, 0) : 0, "m_ext" => false, "freeze" => false
         }
-        item["time_seconds"] = rent.days * 86_400 unless req[:query]["number"].nil?
+        unless req[:query]["number"].nil?
+          item["time_seconds"] = minutes * 60
+          item["guard_interval_remaining_seconds"] = !confirmed && rent.messages.empty? ? state.guard_interval : 0
+        end
         item
       end
 
       def get_rent_num(state, req)
         country = int(req, "country", 7)
-        tariff = state.rent_tariffs[country] or return error("NO_COUNTRY")
+        tariff = state.rent_tariffs[country] or return error("UNDEFINED_COUNTRY")
         days = int(req, "days", 1)
         price = tariff[:days][days] or return error("UNDEFINED_DAYS")
         return error("WARNING_LOW_BALANCE") if state.available < State.to_mills(price)
 
         tzid = state.next_id
-        state.balance -= State.to_mills(price)
+        # Reserved, not charged: the first SMS that is not `notify` confirms the rent and charges it.
+        state.frozen += State.to_mills(price)
         # `extension` defaults to 1 on the server; `0` makes the rent non-extendable for good.
-        rent = Rent.new(tzid: tzid, country: country, number: State.short_number(tzid), days: days, sum: price,
-                        extension: req[:query]["extension"] != "0", messages: [])
+        rent = Rent.new(tzid: tzid, country: country, number: State.short_number(tzid), days: days, initial_days: days,
+                        status: 0, sum: price, extension: req[:query]["extension"] != "0", messages: [])
         state.rents[tzid] = rent
         { "response" => 1, "item" => rent_item(state, rent, req) }
       end
@@ -228,16 +248,17 @@ module OnlineSim
                   [state.rents[int(req, "tzid", -1)]].compact
                 end
         rents.each { |rent| state.poll(rent.tzid) }
-        { "response" => 1, "list" => rents.map { |r| rent_item(state, r, req) } }
+        { "response" => 1, "list" => rents.map { |r| rent_item(state, r, req, string_sum: true) } }
       end
 
       def extend_rent_state(state, req)
-        rent = state.rents[int(req, "tzid", 0)] or return error("ERROR_WRONG_TZID")
-        tariff = state.rent_tariffs[rent.country]
-        return error("TRY_AGAIN_LATER") unless rent.extension && tariff && tariff[:extend] == 1
+        # Every refusal is TRY_AGAIN_LATER, like the backend: unknown tzid, unconfirmed rent, not extendable, unknown days.
+        rent = state.rents[int(req, "tzid", 0)]
+        tariff = rent && state.rent_tariffs[rent.country]
+        return error("TRY_AGAIN_LATER") unless tariff && rent.status == 1 && rent.extension && tariff[:extend] == 1
 
         days = int(req, "days", 1)
-        price = tariff[:days][days] or return error("UNDEFINED_DAYS")
+        price = tariff[:days][days] or return error("TRY_AGAIN_LATER")
         return error("WARNING_LOW_BALANCE") if state.available < State.to_mills(price)
 
         state.balance -= State.to_mills(price)
@@ -248,8 +269,16 @@ module OnlineSim
 
       def close_rent_num(state, req)
         tzid = int(req, "tzid", 0)
-        return error("ERROR_WRONG_TZID") unless state.rents.delete(tzid)
+        rent = state.rents[tzid] or return error("ERROR_NO_OPERATIONS")
+        if rent.status.zero?
+          # `guard_interval` stands in for the backend's first 120 s, during which a rent without any SMS stays open.
+          return error("NO_COMPLETE_TZID") if rent.messages.empty? && state.guard_interval.positive?
 
+          # Unconfirmed (no SMS or only `notify`): the reservation is released.
+          state.frozen -= State.to_mills(rent.sum)
+        end
+        # A confirmed rent closes without a refund.
+        state.rents.delete(tzid)
         state.scheduled.delete(tzid)
         { "response" => "1" }
       end
@@ -281,12 +310,8 @@ module OnlineSim
         { "response" => "1", "profile" => PROFILE.merge("apikey" => state.api_key, "webhook_url" => state.webhook_url) }
       end
 
-      def http_url?(value)
-        uri = URI.parse(value)
-        %w[http https].include?(uri.scheme) && !uri.host.to_s.empty?
-      rescue URI::InvalidURIError
-        false
-      end
+      # The backend accepts any `scheme://…` URL.
+      def url?(value) = value.match?(%r{\A[a-z][a-z0-9+.-]*://\S+\z}i)
 
       def profile(state, req)
         body = req[:body]
@@ -294,7 +319,7 @@ module OnlineSim
 
         fields = body["profile"]
         url = fields["webhook_url"]
-        unless url.nil? || (url.is_a?(String) && http_url?(url))
+        unless url.nil? || (url.is_a?(String) && url?(url))
           return { "response" => { "webhook_url" => ["The webhook url must be a valid URL."] } }
         end
 
@@ -308,7 +333,8 @@ module OnlineSim
 
       def get_payment_history(_state, req)
         { "response" => "1", "orders" => paginate([], int(req, "page", 1), 10, "getPaymentHistory.php"),
-          "paylist" => [], "domains" => [], "currency" => { "USD" => 1 } }
+          "paylist" => [], "domains" => ["onlinesim.io"], "forms" => { "1" => "Card" }, "currency" => { "USD" => 1 },
+          "buttons" => { "USD" => [5, 10, 20] } }
       end
 
       # ----- free -----
@@ -323,15 +349,18 @@ module OnlineSim
         end
         number = data[:numbers].key?(req[:query]["number"]) ? req[:query]["number"] : data[:numbers].keys.first
         messages = data[:numbers][number].each_with_index.map do |(sender, text), i|
-          { "id" => i + 1, "text" => text, "in_number" => sender, "my_number" => number, "created_at" => State.stamp(i),
+          { "id" => i + 1, "text" => text, "in_number" => sender, "my_number" => number, "created_at" => iso(i),
             "data_humans" => "1 day ago", "code" => State.extract_code(text) || "-" }
         end
-        page = paginate(messages, int(req, "page", 1), int(req, "count", 10), "getFreeList")
+        count = int(req, "count", 10).clamp(10, 500)
+        page = paginate(messages, [1, int(req, "page", 1)].max, count, "getFreeList")
         {
           "response" => 1,
           "countries" => FREE.map { |c, d| { "country" => c, "country_text" => d[:text], "country_original" => d[:name] } },
           "numbers" => numbers,
-          "messages" => page.merge("number" => number, "country" => country)
+          "messages" => page.merge("number" => number, "country" => country),
+          "ignore" => FREE_IGNORE,
+          "content" => nil
         }
       end
 

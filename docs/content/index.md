@@ -27,7 +27,7 @@ require "onlinesim"
 client = OnlineSim::Client.new(api_key: ENV["ONLINESIM_KEY"])
 
 balance = client.user.balance
-puts "available: #{balance['balance'] - balance['zbalance']} USD"
+puts "available: #{balance['balance'] - [balance['zbalance'], 0].max} USD"
 
 order = client.numbers.get_with_number("google", 44)
 puts "enter #{order['number']} in the app"
@@ -60,7 +60,7 @@ client = OnlineSim::Client.new(
 
 Sections: [`client.numbers`](/numbers), [`client.rent`](/rent), [`client.user`](/user), [`client.free`](/free). Webhook bodies are parsed by the module function [`OnlineSim.parse_webhook`](/webhooks).
 
-Results are plain `Hash`/`Array` values with the server's string keys (`order["tzid"]`). Two things are normalised: money that the server sends as a decimal string (`balance`, rent `sum`) becomes a `Float`, and maps that arrive as an empty PHP array `[]` become `{}`. Durations (`timeout`, `interval`) are seconds.
+Results are plain `Hash`/`Array` values with the server's string keys (`order["tzid"]`). Two things are normalised: money that the server sends as a decimal string (`balance`, rent `sum` in `rent.state`) becomes a `Float`, and maps that arrive as an empty PHP array `[]` become `{}`. `payment_history["paylist"]` is left as sent: an `Array` when its ids are 0, 1, 2… Durations (`timeout`, `interval`) are seconds.
 
 ## Error handling
 
@@ -68,8 +68,8 @@ Every error is an `OnlineSim::Error` (a `StandardError`).
 
 | Class | When | Attributes |
 |---|---|---|
-| `ApiError` | The API answered with an error code (also a wrong key, HTTP 456). | `code`, `message` |
-| `NoNumberError` | `NO_NUMBER` / `NO_NUMBER_FOR_FORWARD`: no number right now. Subclass of `ApiError`. | `code`, `message` |
+| `ApiError` | The API answered with an error code (also a wrong key, HTTP 456, and the rate limit, HTTP 429 `TRY_AGAIN_LATER`). | `code`, `message` |
+| `NoNumberError` | `NO_NUMBER`: no number right now. Subclass of `ApiError`. | `code`, `message` |
 | `TransportError` | Network error, request timeout, or a body that is not JSON. | `status` (`nil` without a response), `body` (first 500 chars) |
 | `TimeoutError` | `wait_code` got no code within its `timeout`. | — |
 

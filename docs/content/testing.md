@@ -26,7 +26,7 @@ OnlineSim::MockOnlineSim.new(api_key: "mock-key", balance: 100, prices: nil, ren
 | `balance` | `100` | Starting balance, USD. |
 | `prices` | `{ 7 => { "vkcom" => 0.5, "telegram" => 1.2, "google" => 0.3 }, 44 => { "google" => 0.2, "vkcom" => 0.36 } }` | Number prices, country code → service slug → USD; replaces the defaults. Also feeds `numbers.tariffs`. |
 | `rent_tariffs` | `{ 7 => { days: { 1 => 1.0, 3 => 2.5, 7 => 5.0 }, extend: 1 } }` | Rent prices; `extend: 0` makes rents of that country non-extendable. |
-| `guard_interval` | `0` | `> 0`: an operation without SMS cannot be closed (`NO_COMPLETE_TZID`). |
+| `guard_interval` | `0` | `> 0`: an operation without SMS, or an unconfirmed rent without any SMS, cannot be closed (`NO_COMPLETE_TZID`). |
 
 `mock.client(**options)` takes the usual [client options](/#client-options) except `transport:`. To build the client yourself, pass `mock.transport` (the mock itself) as `transport:`; any `base_url` works:
 
@@ -82,7 +82,7 @@ def test_handles_a_missing_number_and_a_network_hiccup
 end
 ```
 
-The state itself produces the real error codes too: `WARNING_LOW_BALANCE` when the balance is short, `NO_NUMBER` when `reject` matches the next number, `UNDEFINED_COUNTRY` / `ERROR_NO_SERVICE` for unknown prices, `ERROR_WRONG_TZID` for an unknown or closed operation, `TRY_AGAIN_LATER` when extending a non-extendable rent, `ERROR_WRONG_KEY` (HTTP 456) for a wrong key.
+The state itself produces the real error codes too: `WARNING_LOW_BALANCE` when the balance is short, `NO_NUMBER` when `reject` matches the next number, `UNDEFINED_COUNTRY` / `ERROR_NO_SERVICE` for unknown prices, `ERROR_WRONG_TZID` for an unknown or closed operation (`next` too; `ERROR_NO_TZID` for tzid `0`), `UNDEFINED_COUNTRY` / `UNDEFINED_DAYS` for an unknown rent country or period, `TRY_AGAIN_LATER` for every refused `rent.extend`, `ERROR_NO_OPERATIONS` for an unknown rent in `rent.close`, `ERROR_WRONG_KEY` for a wrong key (HTTP 456) or no key (HTTP 200).
 
 ## Inspecting requests
 
@@ -109,7 +109,7 @@ end
 | `add_sms_after(tzid, text, polls, service: nil)` | The SMS arrives after `polls` state requests for `tzid` (`numbers.state`/`state_one`, `rent.state`/`state_one`). |
 | `fail_next(code, endpoint: nil)` | The next request (to `endpoint` only, e.g. `"getNum.php"`) answers `{"response": code}`. |
 | `fail_next_transport(status: 502, endpoint: nil)` | The next request fails with a non-JSON body and HTTP `status`. |
-| `set_balance(usd)` / `balance` | Set / read the total balance, USD (it includes the part frozen by open operations, as `user.balance` reports it). |
+| `set_balance(usd)` / `balance` | Set / read the total balance, USD (it includes the part frozen by open operations and unconfirmed rents, as `user.balance` reports it). |
 | `operations` / `rents` | Copies of the current number operations / open rents (`Struct`s: `tzid`, `status`, `messages`, …), for assertions. |
 | `requests` | Log of the requests received (a copy). |
 | `reset` | Back to the constructor's state. |
@@ -117,7 +117,7 @@ end
 ## What the mock does
 
 - **Numbers**: `get` freezes the price; `close` after an SMS spends it, `close` without one refunds it; `ban` after an SMS answers `"0"`, like the server. Numbers are `+<country>9000000NN`, ids count from 1. `next` switches to the following SMS. The operation's `time` stays at 1200 s — there is no clock.
-- **Rent**: `get` charges at once and keeps the `extension` flag; `extend` charges again; `close` removes the rent. SMS appear in `messages`, newest first.
-- **User**: `balance` (frozen part included), a fixed profile, `set_webhook_url` validates `http(s)` URLs (`VALIDATION_ERROR` otherwise), `webhook_logs` lists the deliveries the mock *recorded* when an SMS arrived while a webhook URL was set — it makes no HTTP call. `payment_history` is empty.
-- **Free**: `free.list` returns two fixed countries with one number and a few SMS each.
-- Not imitated: the server's 5 s lock after `setOperationOk` (`INTERVAL_CONCURRENT_REQUESTS_ERROR`) and anything else that needs real time.
+- **Rent**: `get` reserves the price (`status` `0`, `checked` `false`) and keeps the `extension` flag; the first SMS that is not `notify` confirms the rent (`status` `1`) and charges it — `add_sms(tzid, text, service: "notify")` adds a notice with `code` `0` that confirms nothing. `extend` works on a confirmed rent and charges at once. `close` releases the reservation of an unconfirmed rent and gives no refund for a confirmed one. `sum` is a number in `get`/`extend` and a decimal string on the wire of `state`, like the server. SMS appear in `messages`, newest first.
+- **User**: `balance` (frozen part included), a fixed profile, `set_webhook_url` accepts any `scheme://…` URL (`VALIDATION_ERROR` otherwise), `webhook_logs` lists the deliveries the mock *recorded* when an SMS arrived while a webhook URL was set — it makes no HTTP call; their `params` follow the real payload (`code` `""` without a code, rent `number` in digits without `+`, rent `time_left` in minutes). `payment_history` has no orders.
+- **Free**: `free.list` returns two fixed countries (44 first) with one number and a few SMS each.
+- Not imitated: anything that needs real time — the 5 s lock after `setOperationOk` (`INTERVAL_CONCURRENT_REQUESTS_ERROR`), the 10 s lock of `rent.extend`, the 120 s before an unconfirmed rent may be closed and its 20-minute wait for the first SMS. `guard_interval > 0` stands in for "too early to close".

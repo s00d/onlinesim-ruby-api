@@ -36,9 +36,9 @@ end
 | `operation_id` | `Integer`, `nil` | `tzid` of the operation or rent. |
 | `user_id` | `Integer`, `nil` | Account id. |
 | `country_code` | `Integer`, `nil` | Country code of the number. |
-| `number` | `String`, `nil` | The number, e.g. `+79001234567`. |
+| `number` | `String`, `nil` | Numbers: `+` and the full number (`+79001234567`), or `hidden`. Rent: the full number in digits without `+` (`79001234567`). |
 | `sender` | `String`, `nil` | Sender of the SMS, e.g. `VK`. |
 | `message` | `String`, `nil` | Full SMS text. |
-| `code` | `String`, `nil` | Code extracted from the SMS. |
-| `time_start` | `String`, `nil` | Start of the operation. |
-| `time_left` | `Integer`, `nil` | Time left. |
+| `code` | `String`, `nil` | Code extracted from the SMS; `""` when none was found. |
+| `time_start` | `String`, `nil` | Numbers: when the operation was ordered. Rent: when the SMS arrived. `YYYY-MM-DD HH:MM:SS`. |
+| `time_left` | `Integer`, `nil` | Time left: seconds for numbers, minutes for rent. |

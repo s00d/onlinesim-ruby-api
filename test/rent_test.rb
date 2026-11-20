@@ -19,6 +19,23 @@ class RentTest < Minitest::Test
     assert_equal "195895", rent["messages"][0]["code"]
   end
 
+  def test_decodes_sum_as_a_number_or_a_string_and_code_0_for_a_notify_sms
+    item = state["list"][0].merge(
+      "status" => 0, "checked" => false, "sum" => 1.5,
+      "messages" => [
+        { "id" => 2, "service" => "notify", "text" => "Messages from this sender are not accepted", "code" => 0,
+          "created_at" => "2026-11-19 10:01:12" },
+        { "id" => 1, "service" => "Google", "text" => "G-070051", "code" => "070051", "created_at" => "2026-11-19 10:01:00" }
+      ]
+    )
+    client, = fake_client([{ json: { response: 1, item: item } },
+                           { json: { response: 1, list: [item.merge("sum" => "2.40")] } }])
+    rent = client.rent.get(7, 3)
+    assert_equal [0, false, 1.5], rent.values_at("status", "checked", "sum")
+    assert_equal([0, "070051"], rent["messages"].map { |m| m["code"] })
+    assert_in_delta 2.4, client.rent.state_one(rent["tzid"])["sum"]
+  end
+
   def test_get_with_extension_false_sends_extension_0
     client, t = fake_client([{ json: { response: 1, item: state["list"][1] } }])
     client.rent.get(7, 1, extension: false)

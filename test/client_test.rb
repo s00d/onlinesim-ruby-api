@@ -62,9 +62,24 @@ class ClientTest < Minitest::Test
     assert_equal "No numbers available for this service right now", error.message
   end
 
-  def test_maps_no_number_for_forward_to_no_number_error
-    client, = fake_client([{ json: { response: "NO_NUMBER_FOR_FORWARD" } }])
-    assert_raises(OnlineSim::NoNumberError) { client.numbers.get("google") }
+  def test_maps_http_429_try_again_later_to_api_error_not_transport_error
+    client, = fake_client([{ status: 429, json: { response: "TRY_AGAIN_LATER" } }])
+    error = assert_raises(OnlineSim::ApiError) { client.numbers.state }
+    refute_kind_of OnlineSim::TransportError, error
+    assert_equal "TRY_AGAIN_LATER", error.code
+  end
+
+  def test_maps_a_missing_key_http_200_error_wrong_key_to_api_error
+    client, = fake_client([{ json: { response: "ERROR_WRONG_KEY" } }], api_key: nil)
+    error = assert_raises(OnlineSim::ApiError) { client.user.balance }
+    assert_equal ["ERROR_WRONG_KEY", "Wrong or missing API key"], [error.code, error.message]
+  end
+
+  def test_only_no_number_is_a_no_number_error
+    client, = fake_client([{ json: { response: "FORWARD_NOT_SUPPORTED" } }])
+    error = assert_raises(OnlineSim::ApiError) { client.numbers.get("google") }
+    refute_kind_of OnlineSim::NoNumberError, error
+    assert_equal "Number forwarding is no longer available", error.message
   end
 
   def test_maps_http_456_wrong_key_to_api_error_not_transport_error
@@ -72,7 +87,7 @@ class ClientTest < Minitest::Test
     error = assert_raises(OnlineSim::ApiError) { client.user.balance }
     refute_kind_of OnlineSim::TransportError, error
     assert_equal "ERROR_WRONG_KEY", error.code
-    assert_equal "Wrong API key", error.message
+    assert_equal "Wrong or missing API key", error.message
   end
 
   def test_prefers_the_server_message_but_not_when_it_echoes_the_code

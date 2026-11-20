@@ -66,7 +66,8 @@ module OnlineSim
       rescue JSON::ParserError
         raise TransportError.new("HTTP #{status}: response is not JSON", status: status, body: text[0, BODY_EXCERPT])
       end
-      # The body is checked before the status: a wrong key is HTTP 456 with {"response":"ERROR_WRONG_KEY"}.
+      # The body is checked before the status: a wrong key is HTTP 456 with {"response":"ERROR_WRONG_KEY"},
+      # the rate limit HTTP 429 with {"response":"TRY_AGAIN_LATER"}.
       return unwrap(data) if data.is_a?(Hash) && data.key?("response")
       raise TransportError.new("HTTP #{status}", status: status, body: text[0, BODY_EXCERPT]) unless (200..299).cover?(status)
 
@@ -95,7 +96,7 @@ module OnlineSim
       code = response.to_s
       # Debug backends echo the code as `message`; prefer the readable fallback then.
       message = rest["message"].is_a?(String) && rest["message"] != code ? rest["message"] : nil
-      raise NoNumberError.new(code, message) if %w[NO_NUMBER NO_NUMBER_FOR_FORWARD].include?(code)
+      raise NoNumberError.new(code, message) if code == "NO_NUMBER"
 
       raise ApiError.new(code, message)
     end

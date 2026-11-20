@@ -25,7 +25,8 @@ module OnlineSim
     # balance        - starting balance, USD.
     # prices         - number prices, country code => { service slug => USD }; replaces the defaults.
     # rent_tariffs   - rent tariffs, country code => { days: { days => USD }, extend: 1 | 0 }; replaces the defaults.
-    # guard_interval - seconds; > 0: an operation without SMS cannot be closed (NO_COMPLETE_TZID).
+    # guard_interval - seconds; > 0: an operation without SMS, or an unconfirmed rent without any SMS, cannot be
+    #                  closed (NO_COMPLETE_TZID).
     def initialize(api_key: "mock-key", balance: 100, prices: nil, rent_tariffs: nil, guard_interval: 0)
       @state = State.new(api_key: api_key, balance: balance, prices: prices, rent_tariffs: rent_tariffs,
                          guard_interval: guard_interval)
@@ -70,7 +71,7 @@ module OnlineSim
       @state.balance = State.to_mills(usd)
     end
 
-    # Total balance, USD, including the part frozen by open operations (as `user.balance` reports it).
+    # Total balance, USD, including the part frozen by open operations and unconfirmed rents (as `user.balance` reports it).
     def balance = State.from_mills(@state.balance)
 
     # Number operations, oldest first (deep copies).
@@ -117,9 +118,11 @@ module OnlineSim
 
       handler = Handlers::ROUTES[req[:path]]
       return html(404, "Not Found") unless handler
-      if !Handlers::PUBLIC_PATHS.include?(req[:path]) && authorization(headers) != "Bearer #{@state.api_key}"
-        return json({ "response" => "ERROR_WRONG_KEY" }, 456)
-      end
+
+      # A wrong key is HTTP 456 (public endpoints check a sent key too); no key at all is HTTP 200.
+      auth = authorization(headers)
+      return json({ "response" => "ERROR_WRONG_KEY" }, 456) if !auth.nil? && auth != "Bearer #{@state.api_key}"
+      return json({ "response" => "ERROR_WRONG_KEY" }) if auth.nil? && !Handlers::PUBLIC_PATHS.include?(req[:path])
 
       json(Handlers.public_send(handler, @state, req))
     end

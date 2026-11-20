@@ -93,6 +93,25 @@ class NumbersTest < Minitest::Test
     assert_equal({ "tzid" => "1520", "ban" => "1" }, t.last.query)
   end
 
+  def test_ban_after_an_sms_surfaces_api_error_zero_with_a_readable_message
+    client, = fake_client([{ json: { response: "0" } }])
+    error = assert_raises(OnlineSim::ApiError) { client.numbers.ban(1520) }
+    assert_equal ["0", "Ban not applied: the operation already has an SMS"], [error.code, error.message]
+  end
+
+  def test_next_accepts_the_string_tzid_answer_error_wrong_tzid_for_a_foreign_tzid
+    client, = fake_client([{ json: { tzid: "1520", response: "1" } }, { json: { response: "ERROR_WRONG_TZID" } }])
+    assert client.numbers.next(1520)
+    assert_equal "ERROR_WRONG_TZID", assert_raises(OnlineSim::ApiError) { client.numbers.next(1) }.code
+  end
+
+  def test_state_one_accepts_an_operation_without_response
+    client, = fake_client([{ json: [{ tzid: 5, country: 7, service: "vkcom", sum: 0.5, time: 900, form: "index" }] }])
+    op = client.numbers.state_one(5)
+    assert_equal 5, op["tzid"]
+    assert_nil op["response"]
+  end
+
   def test_close_surfaces_no_complete_tzid
     client, = fake_client([{ json: { response: "NO_COMPLETE_TZID" } }])
     error = assert_raises(OnlineSim::ApiError) { client.numbers.close(1) }

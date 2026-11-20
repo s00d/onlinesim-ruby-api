@@ -5,10 +5,15 @@ module OnlineSim
   MONOTONIC = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
   private_constant :MONOTONIC
 
+  # ApiError codes that mean "try again": rate limit (HTTP 429), a transient server error, too many requests.
+  RETRYABLE_CODES = %w[TRY_AGAIN_LATER ERROR_UNDEFINED INTERVAL_CONCURRENT_REQUESTS_ERROR].freeze
+  private_constant :RETRYABLE_CODES
+
   # Poll `numbers.state_one(tzid)` every `interval` seconds until a code different from `since` arrives, then
   # `close` (or `next` with `keep_open`) and return it. A finished operation (TZ_OVER_OK, ERROR_NO_ITEMS) without a
   # new code raises ApiError with that state as the code; running out of `timeout` seconds raises TimeoutError.
-  # TransportError is retried until the timeout; any ApiError is raised at once.
+  # TransportError and the transient ApiError codes TRY_AGAIN_LATER, ERROR_UNDEFINED and
+  # INTERVAL_CONCURRENT_REQUESTS_ERROR are retried until the timeout; any other ApiError is raised at once.
   # `sleep` (seconds -> any) and `now` (-> seconds) are injectable for tests.
   def self.wait_code(numbers, tzid, interval: 5, timeout: 600, keep_open: false, full_message: false, since: nil,
                      sleep: Kernel.method(:sleep), now: MONOTONIC)
@@ -17,6 +22,10 @@ module OnlineSim
       op = begin
         numbers.state_one(tzid, message_to_code: !full_message)
       rescue TransportError
+        nil
+      rescue ApiError => e
+        raise unless RETRYABLE_CODES.include?(e.code)
+
         nil
       end
 

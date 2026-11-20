@@ -10,7 +10,8 @@ module OnlineSim
       @request = request
     end
 
-    # Rent a number for `days` days. `extension: false` makes the rent non-extendable for good.
+    # Rent a number for `days` days. The price is reserved (`status` 0); the first SMS that is not `notify`
+    # confirms the rent and charges it. `extension: false` makes the rent non-extendable for good.
     def get(country = 7, days = 1, extension: true)
       res = @request.call("rent/getRentNum.php", query: { country: country, days: days, extension: extension, **DETAIL })
       item(res["item"])
@@ -29,7 +30,7 @@ module OnlineSim
       item(raw)
     end
 
-    # Extend a rent by `days` days (only rents created with `extension: true`).
+    # Extend a rent by `days` days and charge at once (only confirmed rents created with `extension: true`).
     # Overrides Object#extend on this section object on purpose: the name is the API's.
     def extend(tzid, days = 1)
       item(@request.call("rent/extendRentState.php", query: { tzid: tzid, days: days, **DETAIL })["item"])
@@ -57,7 +58,8 @@ module OnlineSim
 
     private
 
-    # `sum` is a decimal string, `extend` may be `[]`.
+    # `sum` is a number (getRentNum, extendRentState) or a decimal string (getRentState), `extend` may be `[]`.
+    # Message `code` stays as sent: a String, or the Integer 0 for a `notify` SMS.
     def item(raw)
       raw.merge(
         "sum" => (Normalize.num(raw["sum"]) || 0).to_f,
