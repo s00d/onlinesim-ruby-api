@@ -13,11 +13,11 @@ Balance in USD.
 balance # => {"balance" => Float, "zbalance" => Float, "income" => Float (when sent)}
 ```
 
-`balance` includes the sum frozen by numbers in progress (`zbalance`): available = `balance − zbalance`. `income` is the partner income. The server caches the answer for 60 s.
+`balance` includes the sum frozen by numbers and unconfirmed rents in progress (`zbalance`, which may be negative): available = `balance − max(zbalance, 0)`. `income` is the partner income. The server caches the answer for 60 s.
 
 ```ruby
 b = client.user.balance
-available = b["balance"] - b["zbalance"]
+available = b["balance"] - [b["zbalance"], 0].max
 ```
 
 Errors: `ApiError` `ERROR_WRONG_KEY`, `ACCOUNT_BLOCKED`, `API_ACCESS_DISABLED`, `API_ACCESS_IP`.
@@ -45,7 +45,7 @@ Top-up orders (paginated, newest first) and the available payment methods.
 payment_history(page = 1) # => Hash
 ```
 
-`{"orders" => paginator, "paylist", "domains"?, "forms"?, "currency"?, "buttons"?}`. An order's `sum` stays a decimal string (`"89.00"`).
+`{"orders" => paginator, "paylist", "domains"?, "forms"?, "currency"?, "buttons"?}`. An order's `sum` stays a decimal string (`"89.00"`); `currency` and `form_text` may be `nil`. `paylist` maps a group id to its payment methods, or is an `Array` when the ids are 0, 1, 2… (the server sends a JSON array then).
 
 ```ruby
 orders = client.user.payment_history["orders"]

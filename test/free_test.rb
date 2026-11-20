@@ -15,6 +15,12 @@ class FreeTest < Minitest::Test
     assert_equal "195895", list["messages"]["data"][0]["code"]
   end
 
+  def test_list_accepts_null_country_text_and_country_original
+    country = { "country" => 999, "country_text" => nil, "country_original" => nil }
+    client, = fake_client([{ json: { response: 1, countries: [country], numbers: [], messages: { data: [] } } }])
+    assert_equal country, client.free.list["countries"][0]
+  end
+
   def test_list_normalises_empty_numbers
     client, t = fake_client([{ json: { response: 1, countries: [], numbers: [], messages: { data: [] } } }])
     assert_equal({}, client.free.list["numbers"])

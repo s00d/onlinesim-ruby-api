@@ -118,7 +118,7 @@ wait_code(tzid, interval: 5, timeout: 600, keep_open: false, full_message: false
 | `since:` | `String`, `nil` | `nil` | Ignore this value (the previous code). |
 | `sleep:`, `now:` | callables | `Kernel#sleep`, monotonic clock | Injectable for tests (seconds). |
 
-A transient `TransportError` is retried until the timeout; any `ApiError` is raised at once. Also available as `OnlineSim.wait_code(numbers, tzid, **options)`.
+Transient errors are retried until the timeout: `TransportError`, and `ApiError` `TRY_AGAIN_LATER` (the HTTP 429 rate limit), `ERROR_UNDEFINED` and `INTERVAL_CONCURRENT_REQUESTS_ERROR`. Any other `ApiError` is raised at once. Also available as `OnlineSim.wait_code(numbers, tzid, **options)`.
 
 ```ruby
 first = client.numbers.wait_code(tzid, keep_open: true)
@@ -138,6 +138,8 @@ next(tzid) # => true
 ```ruby
 client.numbers.next(tzid)
 ```
+
+Errors: `ApiError` `ERROR_WRONG_TZID` (not an operation of your account), `ERROR_NO_TZID`.
 
 ## close
 
@@ -165,7 +167,7 @@ ban(tzid) # => true
 client.numbers.ban(tzid)
 ```
 
-Errors: as `close`.
+Errors: as `close`; `ApiError` with code `"0"` when the operation already has an SMS — nothing is changed then.
 
 ## tariffs
 

@@ -26,12 +26,28 @@ class UserTest < Minitest::Test
     assert_equal [1, "https://example.com/hook", ["333"]], profile.values_at("id", "webhook_url", "number_reject")
   end
 
-  def test_payment_history_normalises_the_empty_paylist
+  def test_profile_decodes_number_as_int_or_nil_and_country_as_string_or_nil
+    client, = fake_client([{ json: { response: "1", profile: { id: 1, number: 79_001_234_567, country: "RU" } } }])
+    assert_equal [79_001_234_567, "RU"], client.user.profile.values_at("number", "country")
+  end
+
+  def test_payment_history_keeps_a_paylist_that_arrives_as_a_json_array_nullable_order_fields
+    body = fixture("getPaymentHistory")
+    order = { "id" => 1, "sum" => "10.00", "currency" => nil, "form_text" => nil, "stat" => 0,
+              "created_at" => "2026-06-14 09:12:12" }
+    paylist = [{ "id" => 0, "name" => "Card" }, { "id" => 1, "name" => "Crypto" }]
+    client, = fake_client([{ json: body.merge("paylist" => paylist, "orders" => body["orders"].merge("data" => [order])) }])
+    history = client.user.payment_history
+    assert_equal paylist, history["paylist"]
+    assert_equal [nil, nil], history["orders"]["data"][0].values_at("currency", "form_text")
+  end
+
+  def test_payment_history_keeps_an_empty_paylist
     client, t = fake_client([{ json: fixture("getPaymentHistory") }])
     history = client.user.payment_history(2)
     assert_equal "/api/getPaymentHistory.php", t.last.path
     assert_equal({ "page" => "2" }, t.last.query)
-    assert_equal({}, history["paylist"])
+    assert_equal([], history["paylist"])
     assert_equal [9462, "89.00"], history["orders"]["data"][0].values_at("id", "sum")
   end
 

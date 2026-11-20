@@ -87,7 +87,26 @@ class WaitCodeTest < Minitest::Test
     assert_equal ["state 7 code=true", "sleep 5", "state 7 code=true", "close 7"], f.log
   end
 
-  def test_raises_any_api_error_at_once
+  def test_retries_a_transient_api_error_until_the_code_arrives
+    %w[TRY_AGAIN_LATER ERROR_UNDEFINED INTERVAL_CONCURRENT_REQUESTS_ERROR].each do |code|
+      f = FakeNumbers.new([OnlineSim::ApiError.new(code), { "msg" => "42" }])
+      assert_equal "42", f.wait(7)
+      assert_equal ["state 7 code=true", "sleep 5", "state 7 code=true", "close 7"], f.log
+    end
+  end
+
+  def test_a_retryable_api_error_still_ends_in_timeout_error_at_the_deadline
+    f = FakeNumbers.new(Array.new(10) { OnlineSim::ApiError.new("TRY_AGAIN_LATER") })
+    assert_raises(OnlineSim::TimeoutError) { f.wait(7, interval: 5, timeout: 10) }
+    assert_equal 10, f.clock
+  end
+
+  def test_an_operation_without_response_keeps_polling
+    f = FakeNumbers.new([{ "response" => nil }, { "msg" => "77" }])
+    assert_equal "77", f.wait(7)
+  end
+
+  def test_raises_any_other_api_error_at_once
     f = FakeNumbers.new([OnlineSim::ApiError.new("ERROR_NO_OPERATIONS")])
     error = assert_raises(OnlineSim::ApiError) { f.wait(7) }
     assert_equal "ERROR_NO_OPERATIONS", error.code

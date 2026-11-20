@@ -16,7 +16,7 @@ require "onlinesim"
 client = OnlineSim::Client.new(api_key: ENV["ONLINESIM_KEY"])
 
 b = client.user.balance
-puts "available: #{b['balance'] - b['zbalance']} USD"
+puts "available: #{b['balance'] - [b['zbalance'], 0].max} USD"
 
 order = client.numbers.get_with_number("google", 44)
 puts "enter #{order['number']} in the app"

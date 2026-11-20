@@ -9,6 +9,14 @@ class MockTest < Minitest::Test
 
   def mock(**options) = OnlineSim::MockOnlineSim.new(**options)
 
+  AUTH = { "Authorization" => "Bearer mock-key" }.freeze
+
+  # A raw request to the mock's transport: [status, parsed JSON body].
+  def raw(mock, path, headers = AUTH)
+    status, body = mock.call("GET", "https://x.test/api/#{path}", headers, nil, 30)
+    [status, JSON.parse(body)]
+  end
+
   def assert_api_error(code, klass = OnlineSim::ApiError, &block)
     error = assert_raises(klass, &block)
     assert_equal code, error.code
@@ -17,18 +25,22 @@ class MockTest < Minitest::Test
 
   # ----- auth and transport -----
 
-  def test_wrong_or_missing_key_answers_456_error_wrong_key_mapped_to_api_error
+  def test_a_wrong_key_is_456_a_missing_key_200_error_wrong_key_both_map_to_api_error
     m = mock
     ["nope", ""].each do |key|
       assert_api_error("ERROR_WRONG_KEY") { m.client(api_key: key).user.balance }
     end
+    assert_equal [200, { "response" => "ERROR_WRONG_KEY" }], raw(m, "getBalance.php", {})
+    assert_equal [456, { "response" => "ERROR_WRONG_KEY" }], raw(m, "getBalance.php", { "Authorization" => "Bearer nope" })
   end
 
-  def test_tariffs_and_free_numbers_need_no_key
-    client = mock.client(api_key: nil)
+  def test_tariffs_and_free_numbers_need_no_key_but_a_sent_wrong_key_is_still_456
+    m = mock
+    client = m.client(api_key: nil)
     assert_equal 44, client.numbers.tariffs_one(44)["code"]
     assert_equal 7, client.rent.tariffs_one(7)["code"]
     assert_equal 44, client.free.list["messages"]["country"]
+    assert_api_error("ERROR_WRONG_KEY") { m.client(api_key: "nope").free.list }
   end
 
   def test_works_as_the_transport_of_a_client_built_by_hand_with_any_base_url
@@ -57,7 +69,8 @@ class MockTest < Minitest::Test
     m = mock
     client = m.client
     assert_equal 1, client.numbers.get("google", 44)
-    assert_equal({ "tzid" => 2, "number" => "+7900000002", "country" => 7, "time" => 1200, "service" => "vkcom" },
+    assert_equal({ "tzid" => 2, "number" => "+7900000002", "country" => 7, "time" => 1200, "service" => "vkcom",
+                   "title" => "vkcom", "response_text" => "Waiting for SMS", "guard_interval_remaining_seconds" => 0 },
                  client.numbers.get_with_number("vkcom"))
     assert_equal([nil, "1"], m.requests.map { |r| r[:query]["number"] })
     assert_equal({ "balance" => 100.0, "zbalance" => 0.7, "income" => 0.0 }, client.user.balance)
@@ -114,7 +127,17 @@ class MockTest < Minitest::Test
     assert_equal "98765", client.numbers.state_one(tzid)["msg"]
     assert_equal [{ "service" => "telegram", "msg" => "Welcome!" }, { "service" => "telegram", "msg" => "98765" }],
                  client.numbers.state_one(tzid, msg_list: true)["msg"]
-    assert client.numbers.next(424_242) # always succeeds, like the backend
+    assert_equal(1, m.requests.count { |r| r[:path] == "setOperationRevise.php" })
+  end
+
+  def test_next_answers_string_tzid_error_wrong_tzid_for_unknown_error_no_tzid_for_0
+    m = mock
+    client = m.client
+    tzid = client.numbers.get("google", 44)
+    assert_equal [200, { "tzid" => tzid.to_s, "response" => "1" }], raw(m, "setOperationRevise.php?tzid=#{tzid}")
+    assert_api_error("ERROR_WRONG_TZID") { client.numbers.next(424_242) }
+    assert_api_error("ERROR_NO_TZID") { client.numbers.next(0) }
+    assert_api_error("ERROR_NO_TZID") { client.numbers.close(0) }
   end
 
   def test_close_spends_after_sms_refunds_without_ban_after_sms_answers_zero
@@ -180,37 +203,70 @@ class MockTest < Minitest::Test
 
   # ----- rent -----
 
-  def test_rent_get_state_extend_close
+  def test_rent_get_reserves_the_first_sms_confirms_and_charges_extend_charges_at_once_close # rubocop:disable Metrics/MethodLength
     m = mock(balance: 10)
     client = m.client
     rent = client.rent.get(7, 3)
-    assert_equal [1, "900000001", 2.5, 3, 3 * 1440, 3 * 86_400, 1, []],
-                 rent.values_at("tzid", "number", "sum", "days", "time", "time_seconds", "extension", "messages")
+    assert_equal [1, "900000001", 0, false, 2.5, 0, 20, 1200],
+                 rent.values_at("tzid", "number", "status", "checked", "sum", "days", "time", "time_seconds")
+    assert_equal [3, 3, 1, 0, []], rent.values_at("rent", "days_autoextend", "extension", "guard_interval_remaining_seconds",
+                                                  "messages")
     assert_equal({ "1" => 1.0, "3" => 2.5, "7" => 5.0 }, rent["extend"])
-    assert_in_delta 7.5, m.balance
+    # reserved: the total balance stays, the price is frozen
+    assert_in_delta 10, m.balance
+    assert_equal [10.0, 2.5], client.user.balance.values_at("balance", "zbalance")
+    assert_api_error("TRY_AGAIN_LATER") { client.rent.extend(rent["tzid"]) } # not confirmed yet
 
     m.add_sms(rent["tzid"], "Bank: 777 888", service: "bank")
     m.add_sms(rent["tzid"], "no code here")
-    messages = client.rent.state_one(rent["tzid"])["messages"]
-    assert_equal([["other", ""], %w[bank 777888]], messages.map { |x| x.values_at("service", "code") }) # newest first
+    state = client.rent.state_one(rent["tzid"])
+    assert_equal [1, true, 3, 3 * 1440, 3 * 86_400], state.values_at("status", "checked", "days", "time", "time_seconds")
+    assert_equal([["other", ""], %w[bank 777888]], state["messages"].map { |x| x.values_at("service", "code") }) # newest first
+    assert_in_delta 7.5, m.balance
+    assert_equal [7.5, 0.0], client.user.balance.values_at("balance", "zbalance")
 
-    assert_equal [4, 3.5], client.rent.extend(rent["tzid"], 1).values_at("days", "sum")
+    assert_equal [4, 4, 3, 3.5], client.rent.extend(rent["tzid"], 1).values_at("days", "rent", "days_autoextend", "sum")
     assert_in_delta 6.5, m.balance
+    assert_api_error("TRY_AGAIN_LATER") { client.rent.extend(rent["tzid"], 2) } # unknown period
+    assert_api_error("TRY_AGAIN_LATER") { client.rent.extend(999) } # unknown tzid
 
     fixed = client.rent.get(7, 1, extension: false)
-    assert_equal [0, {}], fixed.values_at("extension", "extend")
+    m.add_sms(fixed["tzid"], "1234")
+    assert_equal [0, {}], client.rent.state_one(fixed["tzid"]).values_at("extension", "extend")
     assert_api_error("TRY_AGAIN_LATER") { client.rent.extend(fixed["tzid"]) }
     assert_equal([rent["tzid"], fixed["tzid"]], client.rent.state.map { |r| r["tzid"] })
 
-    client.rent.close(fixed["tzid"])
+    client.rent.close(fixed["tzid"]) # confirmed: no refund
+    assert_in_delta 5.5, m.balance
     assert_equal [rent["tzid"]], m.rents.map(&:tzid)
     assert_api_error("ERROR_NO_OPERATIONS") { client.rent.state_one(fixed["tzid"]) }
-    assert_api_error("ERROR_WRONG_TZID") { client.rent.close(fixed["tzid"]) }
+    assert_api_error("ERROR_NO_OPERATIONS") { client.rent.close(fixed["tzid"]) }
+  end
+
+  def test_rent_sum_is_a_number_in_get_rent_num_and_a_decimal_string_in_get_rent_state_on_the_wire
+    m = mock
+    assert_in_delta 2.5, raw(m, "rent/getRentNum.php?days=3").last["item"]["sum"]
+    assert_equal "2.50", raw(m, "rent/getRentState.php").last["list"][0]["sum"]
+  end
+
+  def test_an_unconfirmed_rent_close_releases_notify_sms_has_code_0_and_confirms_nothing_guard_interval
+    m = mock(balance: 10, guard_interval: 120)
+    client = m.client
+    rent = client.rent.get(7, 3)
+    assert_equal 120, rent["guard_interval_remaining_seconds"]
+    assert_api_error("NO_COMPLETE_TZID") { client.rent.close(rent["tzid"]) }
+    m.add_sms(rent["tzid"], "Messages from this sender are not accepted", service: "notify")
+    state = client.rent.state_one(rent["tzid"])
+    assert_equal [0, false, 0], state.values_at("status", "checked", "guard_interval_remaining_seconds")
+    assert_equal ["notify", 0], state["messages"][0].values_at("service", "code")
+    assert client.rent.close(rent["tzid"])
+    assert_in_delta 10, m.balance # released, nothing charged
+    assert_equal [10.0, 0.0], client.user.balance.values_at("balance", "zbalance")
   end
 
   def test_rent_errors_unknown_country_unknown_days_low_balance
     client = mock(balance: 1.5).client
-    assert_api_error("NO_COUNTRY") { client.rent.get(44) }
+    assert_api_error("UNDEFINED_COUNTRY") { client.rent.get(44) }
     assert_api_error("UNDEFINED_DAYS") { client.rent.get(7, 2) }
     assert_api_error("WARNING_LOW_BALANCE") { client.rent.get(7, 3) }
   end
@@ -221,7 +277,9 @@ class MockTest < Minitest::Test
     tzid = client.rent.get["tzid"]
     m.add_sms_after(tzid, "6060", 1)
     assert_equal [], client.rent.state_one(tzid)["messages"]
-    assert_equal %w[6060 other], client.rent.state.first["messages"].first.values_at("code", "service")
+    listed = client.rent.state.first
+    assert_equal 1, listed["status"]
+    assert_equal %w[6060 other], listed["messages"].first.values_at("code", "service")
     count = { "1" => 100, "3" => 100, "7" => 100 }
     assert_equal({ "7" => { "code" => 7, "enabled" => true, "name" => "russia", "new" => false, "position" => 7,
                             "count" => count, "days" => { "1" => 1.0, "3" => 2.5, "7" => 5.0 }, "extend" => 1,
@@ -235,8 +293,9 @@ class MockTest < Minitest::Test
     m = mock(api_key: "secret")
     client = m.client
     assert_equal [1, "secret", nil], client.user.profile.values_at("id", "apikey", "webhook_url")
-    error = assert_api_error("VALIDATION_ERROR") { client.user.set_webhook_url("ftp://x") }
+    error = assert_api_error("VALIDATION_ERROR") { client.user.set_webhook_url("not a url") }
     assert_equal "The webhook url must be a valid URL.", error.message
+    assert client.user.set_webhook_url("ftp://x") # any scheme://… URL
     client.user.set_webhook_url("https://example.com/hook")
     last = m.requests.last
     assert_equal ["POST", "profile.php", { "profile" => { "webhook_url" => "https://example.com/hook" } }],
@@ -247,32 +306,44 @@ class MockTest < Minitest::Test
     m.add_sms(tzid, "code 1234")
     rent = client.rent.get
     m.add_sms(rent["tzid"], "code 5678")
+    m.add_sms(rent["tzid"], "no code")
     logs = client.user.webhook_logs
-    assert_equal [2, 1, 10], logs.values_at("total", "current_page", "per_page")
-    assert_equal([["rent_sms", rent["tzid"], "5678"], ["receiving_sms", tzid, "1234"]],
+    assert_equal [3, 1, 10], logs.values_at("total", "current_page", "per_page")
+    assert_equal([["rent_sms", rent["tzid"], ""], ["rent_sms", rent["tzid"], "5678"], ["receiving_sms", tzid, "1234"]],
                  logs["data"].map { |l| [l["type"], l["params"]["operation_id"], l["params"]["code"]] })
+    # activation: +number, seconds left, order time; rent: digits without +, minutes left, SMS time
+    assert_equal ["+44900000001", 1200, "2026-01-01 00:00:01"],
+                 logs["data"][2]["params"].values_at("number", "time_left", "time_start")
+    assert_equal ["7900000002", 1440, "2026-01-01 00:00:03"],
+                 logs["data"][1]["params"].values_at("number", "time_left", "time_start")
 
     client.user.clear_webhook_url
     assert_nil client.user.profile["webhook_url"]
   end
 
-  def test_balance_includes_the_frozen_part_payment_history_is_empty
+  def test_balance_includes_the_frozen_part_payment_history_has_no_orders
     m = mock(balance: 3)
     client = m.client
     client.numbers.get("telegram")
     assert_equal({ "balance" => 3.0, "zbalance" => 1.2, "income" => 0.0 }, client.user.balance)
     history = client.user.payment_history
-    assert_equal({}, history["paylist"])
+    assert_equal [[], { "1" => "Card" }, { "USD" => [5, 10, 20] }], history.values_at("paylist", "forms", "buttons")
     assert_equal [[], 0, 1], history["orders"].values_at("data", "total", "current_page")
   end
 
   def test_free_list
     client = mock.client
     uk = client.free.list
-    assert_equal [7, 44], uk["countries"].map { |c| c["country"] }.sort
+    assert_equal([44, 7], uk["countries"].map { |c| c["country"] })
     assert_equal ["7459608320"], uk["numbers"].keys
-    assert_equal ["7459608320", 44, 2], uk["messages"].values_at("number", "country", "total")
-    assert_equal "195895", uk["messages"]["data"].first["code"]
+    assert_equal ["7459608320", 44, 2, 10], uk["messages"].values_at("number", "country", "total", "per_page")
+    assert_equal ["195895", "2026-01-01T00:00:00.000000Z"], uk["messages"]["data"].first.values_at("code", "created_at")
+    assert_equal 10, client.free.list(count: 0)["messages"]["per_page"] # clamped to 10..500
+    assert_equal 500, client.free.list(count: 9999)["messages"]["per_page"]
+    assert_equal 44, client.free.list(country: 999)["messages"]["country"] # unknown → the first country
+    _, body = raw(mock, "getFreeList", {})
+    assert_equal [1, nil], body.values_at("response", "content")
+    assert_kind_of String, body["ignore"]
     ru = client.free.list(country: 7)
     assert_equal %w[51423 9001234567], ru["messages"]["data"].first.values_at("code", "my_number")
   end
