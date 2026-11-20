@@ -1,0 +1,17 @@
+# onlinesim-ruby-api
+
+> Zero-dependency Ruby client for the OnlineSim API.
+
+## Documentation Sets
+
+- [onlinesim-ruby-api — full docs](https://s00d.github.io/onlinesim-ruby-api/llms-full.txt): Complete documentation of the onlinesim-ruby-api SDK.
+
+## Documentation
+
+- [Changelog](https://s00d.github.io/onlinesim-ruby-api/raw/changelog.md): Release notes of the onlinesim Ruby gem.
+- [Free numbers](https://s00d.github.io/onlinesim-ruby-api/raw/free.md): Public numbers and their SMS — client.free. No API key needed.
+- [Numbers](https://s00d.github.io/onlinesim-ruby-api/raw/numbers.md): Order a number, read its SMS, close it — client.numbers.
+- [Rent](https://s00d.github.io/onlinesim-ruby-api/raw/rent.md): Rent a number for days and receive every SMS sent to it — client.rent.
+- [Testing](https://s00d.github.io/onlinesim-ruby-api/raw/testing.md): Test your integration offline with MockOnlineSim — no network, key or money.
+- [User](https://s00d.github.io/onlinesim-ruby-api/raw/user.md): Balance, profile, payments and the webhook URL — client.user.
+- [Webhooks](https://s00d.github.io/onlinesim-ruby-api/raw/webhooks.md): Receive SMS as HTTP callbacks and parse them with OnlineSim.parse_webhook.
